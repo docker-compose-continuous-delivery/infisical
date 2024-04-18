@@ -45,6 +45,7 @@ services:
       timeout: 10s
       retries: 3
 
+
   redis:
     image: redis
     container_name: infisical-dev-redis
@@ -85,3 +86,4 @@ volumes:
 
 networks:
   traefik:
+     external: true
