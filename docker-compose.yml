@@ -1,27 +1,82 @@
-version: "3.9"
+version: "3"
 
 services:
+  db-migration:
+    container_name: infisical-db-migration
+    depends_on:
+      db:
+        condition: service_healthy
+    image: infisical/infisical:latest-postgres
+    env_file: .env
+    command: npm run migration:latest
+    pull_policy: always
+    networks:
+      - traefik
+    labels:
+      - "traefik.enable=false"
 
-  hello-world:
-    image: "traefik/whoami"
-    container_name: "simple-service"
+  backend:
+    container_name: infisical-backend
     restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+      db-migration:
+        condition: service_completed_successfully
+    image: infisical/infisical:latest-postgres
+    pull_policy: always
+    env_file: .env
+    environment:
+      - NODE_ENV=production
     networks:
       - traefik
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.simple-service.rule=Host(`hello-world.${BASE_DOMAIN:-ozeliurs.com}`)"
-      - "traefik.http.routers.simple-service.entrypoints=websecure"
-      - "traefik.http.routers.simple-service.tls=true"
-      - "traefik.http.routers.simple-service.tls.certresolver=cloudflare"
-      - "traefik.http.services.simple-service.loadbalancer.server.port=80"
-    healthcheck:
-      test: [ "CMD", "wget", "-q", "--spider", "http://localhost:80" ]
-      interval: 30s
-      timeout: 10s
-      retries: 3
+      - "traefik.http.routers.infisical.rule=Host(`infisical.ozeliurs.com`)"
+      - "traefik.http.routers.infisical.entrypoints=websecure"
+      - "traefik.http.routers.infisical.tls=true"
+      - "traefik.http.routers.infisical.tls.certresolver=cloudflare"
+      - "traefik.http.services.infisical.loadbalancer.server.port=8080"
 
+  redis:
+    image: redis
+    container_name: infisical-dev-redis
+    env_file: .env
+    environment:
+      - ALLOW_EMPTY_PASSWORD=yes
+    ports:
+      - 6379:6379
+    networks:
+      - traefik
+    volumes:
+      - redis_data:/data
+    labels:
+      - "traefik.enable=false"
+
+  db:
+    container_name: infisical-db
+    image: postgres:14-alpine
+    restart: always
+    env_file: .env
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    networks:
+      - traefik
+    labels:
+      - "traefik.enable=false"
+    healthcheck:
+      test: "pg_isready --username=${POSTGRES_USER} && psql --username=${POSTGRES_USER} --list"
+      interval: 5s
+      timeout: 10s
+      retries: 10
+
+volumes:
+  pg_data:
+    driver: local
+  redis_data:
+    driver: local
 
 networks:
   traefik:
-    external: true
